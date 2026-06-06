@@ -44,7 +44,7 @@ def close_db(error=None):
 @app.route("/")
 def index():
     """Home / list page – replace with your actual template later."""
-    return "<h1>MVP is running</h1><p>Replace this with your Jinja2 template.</p>"
+    return "<h1>Bookshelf service is running</h1><p>Replace this with your Jinja2 template.</p>"
 
 
 @app.route("/health")
