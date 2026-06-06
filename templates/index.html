@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Library{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="hero-inner">
+    <h1 class="hero-title">Your Library</h1>
+    <p class="hero-sub">{{ books|length }} book{{ 's' if books|length != 1 else '' }} on the shelf</p>
+  </div>
+</section>
+
+<section class="controls-bar">
+  <div class="controls-inner">
+    <div class="search-wrap">
+      <span class="search-icon">&#9906;</span>
+      <input
+        id="searchInput"
+        type="text"
+        class="search-input"
+        placeholder="Search by title or author…"
+        autocomplete="off"
+      />
+      <button id="searchClear" class="search-clear" aria-label="Clear search" hidden>&times;</button>
+    </div>
+
+    <div class="filter-wrap">
+      <label for="ratingFilter" class="filter-label">Min rating</label>
+      <select id="ratingFilter" class="filter-select">
+        <option value="0">All</option>
+        <option value="3">3+</option>
+        <option value="4">4+</option>
+        <option value="4.5">4.5+</option>
+      </select>
+    </div>
+
+    <div class="sort-wrap">
+      <label for="sortSelect" class="filter-label">Sort by</label>
+      <select id="sortSelect" class="filter-select">
+        <option value="title">Title</option>
+        <option value="author">Author</option>
+        <option value="year">Year</option>
+        <option value="rating">Rating</option>
+      </select>
+    </div>
+  </div>
+</section>
+
+<section class="book-section">
+  <div class="book-grid" id="bookGrid">
+    {% if books %}
+      {% for book in books %}
+      <article
+        class="book-card"
+        data-title="{{ book.title|lower }}"
+        data-author="{{ book.author|lower }}"
+        data-year="{{ book.year }}"
+        data-rating="{{ book.rating if book.rating else 0 }}"
+      >
+        <div class="book-spine"></div>
+        <div class="book-body">
+          <div class="book-meta-top">
+            <span class="book-year">{{ book.year }}</span>
+            {% if book.rating %}
+            <span class="book-rating" title="{{ book.rating }} / 5.0">
+              <span class="star-fill" style="--pct: {{ (book.rating / 5 * 100)|int }}%">★★★★★</span>
+              <span class="rating-val">{{ "%.1f"|format(book.rating) }}</span>
+            </span>
+            {% else %}
+            <span class="book-rating book-rating--none">Unrated</span>
+            {% endif %}
+          </div>
+          <h2 class="book-title">{{ book.title }}</h2>
+          <p class="book-author">{{ book.author }}</p>
+          <div class="book-actions">
+            <a href="{{ url_for('edit_book', book_id=book.id) }}" class="btn btn--ghost btn--sm">Edit</a>
+            <form method="POST" action="{{ url_for('delete_book', book_id=book.id) }}" class="inline-form" onsubmit="return confirmDelete('{{ book.title }}')">
+              <button type="submit" class="btn btn--danger btn--sm">Remove</button>
+            </form>
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+  <div id="emptyState" class="empty-state" hidden>
+    <p class="empty-icon">🔍</p>
+    <p class="empty-msg">No books match your search.</p>
+    <button class="btn btn--ghost" onclick="clearSearch()">Clear filters</button>
+  </div>
+
+  {% if not books %}
+  <div class="empty-state">
+    <p class="empty-icon">📖</p>
+    <p class="empty-msg">Your shelf is empty.<br>Add your first book to get started.</p>
+    <a href="{{ url_for('add_book') }}" class="btn btn--primary">Add a Book</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/list.js') }}"></script>
+{% endblock %}
