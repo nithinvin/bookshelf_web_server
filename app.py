@@ -41,6 +41,7 @@ def close_db(error=None):
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
+#books_artificial = [{ "id": 100, "title": "Range", "Author": "David", "year": 2018, "rating": 4 }]
 
 @app.route("/")
 def index():
@@ -49,6 +50,8 @@ def index():
     with db.cursor() as cur:
         cur.execute("SELECT * FROM books ORDER BY title ASC;")
         books = cur.fetchall()
+        #print(books)
+        #print(type(books))
     return render_template("index.html", books=books)
 
 
