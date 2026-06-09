@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if book else 'Add' }} Book{% endblock %}
+
+{% block content %}
+{% set prefill = prefill if prefill is defined else {} %}
+<section class="form-page">
+  <div class="form-wrap">
+
+    <div class="form-header">
+      <a href="{{ url_for('index') }}" class="back-link">&larr; Back to library</a>
+      <h1 class="form-title">
+        {% if book %}
+          Edit <em>{{ book.title }}</em>
+        {% else %}
+          Add a new book
+        {% endif %}
+      </h1>
+    </div>
+
+    <form
+      id="bookForm"
+      method="POST"
+      action="{{ url_for('edit_book', book_id=book.id) if book else url_for('add_book') }}"
+      novalidate
+    >
+      <!-- Title -->
+      <div class="field" id="field-title">
+        <label class="field-label" for="title">Title <span class="required">*</span></label>
+        <input
+          id="title"
+          name="title"
+          type="text"
+          class="field-input"
+          value="{{ prefill.get('title', book.title) if book else prefill.get('title', '') }}"
+          placeholder="e.g. The Name of the Wind"
+          maxlength="255"
+          autocomplete="off"
+        />
+        <div class="field-feedback" id="fb-title"></div>
+        <div class="field-counter"><span id="cnt-title">0</span> / 255</div>
+      </div>
+
+      <!-- Author -->
+      <div class="field" id="field-author">
+        <label class="field-label" for="author">Author <span class="required">*</span></label>
+        <input
+          id="author"
+          name="author"
+          type="text"
+          class="field-input"
+          value="{{ prefill.get('author', book.author) if book else prefill.get('author', '') }}"
+          placeholder="e.g. Patrick Rothfuss"
+          maxlength="255"
+          autocomplete="off"
+        />
+        <div class="field-feedback" id="fb-author"></div>
+      </div>
+
+      <!-- Year -->
+      <div class="field field--half" id="field-year">
+        <label class="field-label" for="year">Publication year <span class="required">*</span></label>
+        <input
+          id="year"
+          name="year"
+          type="number"
+          class="field-input"
+          value="{{ prefill.get('year', book.year) if book else prefill.get('year', '') }}"
+          placeholder="e.g. 2007"
+          min="1"
+          max="2100"
+        />
+        <div class="field-feedback" id="fb-year"></div>
+      </div>
+
+      <!-- Rating -->
+      <div class="field field--half" id="field-rating">
+        <label class="field-label" for="rating">Rating <span class="optional">(0 – 5)</span></label>
+        <div class="rating-wrap">
+          <input
+            id="rating"
+            name="rating"
+            type="number"
+            class="field-input"
+            value="{{ prefill.get('rating', book.rating if book and book.rating is not none else '') if prefill is defined else (book.rating if book and book.rating is not none else '') }}"
+            placeholder="e.g. 4.5"
+            min="0"
+            max="5"
+            step="0.1"
+          />
+          <div class="star-preview" id="starPreview" aria-hidden="true">
+            <span class="star-fill" id="starFill" style="--pct: 0%">★★★★★</span>
+          </div>
+        </div>
+        <div class="field-feedback" id="fb-rating"></div>
+      </div>
+
+      <div class="form-actions">
+        <a href="{{ url_for('index') }}" class="btn btn--ghost">Cancel</a>
+        <button type="submit" class="btn btn--primary" id="submitBtn">
+          {{ 'Save changes' if book else 'Add to shelf' }}
+        </button>
+      </div>
+    </form>
+
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/form.js') }}"></script>
+{% endblock %}
+
