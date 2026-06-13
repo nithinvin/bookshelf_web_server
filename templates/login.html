@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Log in{% endblock %}
+
+{% block content %}
+<section class="auth-page">
+  <div class="auth-wrap">
+
+    <div class="auth-brand">
+      <span class="auth-icon">📚</span>
+      <h1 class="auth-title">Welcome back</h1>
+      <p class="auth-sub">Log in to your personal shelf</p>
+    </div>
+
+    <form id="loginForm" method="POST" action="{{ url_for('login') }}" novalidate>
+
+      <div class="field" id="field-username">
+        <label class="field-label" for="username">Username</label>
+        <input
+          id="username"
+          name="username"
+          type="text"
+          class="field-input"
+          value="{{ prefill.get('username', '') }}"
+          placeholder="your username"
+          autocomplete="username"
+          autocapitalize="none"
+          autofocus
+        />
+        <div class="field-feedback" id="fb-username"></div>
+      </div>
+
+      <div class="field" id="field-password">
+        <label class="field-label" for="password">
+          Password
+          <button type="button" class="toggle-pw" data-target="password" aria-label="Show password">Show</button>
+        </label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          class="field-input"
+          placeholder="••••••••"
+          autocomplete="current-password"
+        />
+        <div class="field-feedback" id="fb-password"></div>
+      </div>
+
+      <button type="submit" class="btn btn--primary btn--full" id="submitBtn">Log in</button>
+    </form>
+
+    <p class="auth-switch">
+      Don't have an account? <a href="{{ url_for('signup') }}">Sign up</a>
+    </p>
+
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+{% endblock %}

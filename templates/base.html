@@ -17,9 +17,21 @@
         <span class="brand-icon">📚</span>
         <span class="brand-name">Bookshelf</span>
       </a>
+
       <nav class="site-nav">
-        <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">Library</a>
-        <a href="{{ url_for('add_book') }}" class="nav-link nav-cta">+ Add Book</a>
+        {% if session.user_id %}
+          <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">Library</a>
+          <a href="{{ url_for('add_book') }}" class="nav-link nav-cta">+ Add Book</a>
+          <div class="nav-user">
+            <span class="nav-username">{{ session.username }}</span>
+            <form method="POST" action="{{ url_for('logout') }}" class="inline-form">
+              <button type="submit" class="btn-logout">Log out</button>
+            </form>
+          </div>
+        {% else %}
+          <a href="{{ url_for('login') }}"  class="nav-link {% if request.endpoint == 'login'  %}active{% endif %}">Log in</a>
+          <a href="{{ url_for('signup') }}" class="nav-link nav-cta {% if request.endpoint == 'signup' %}active{% endif %}">Sign up</a>
+        {% endif %}
       </nav>
     </div>
   </header>

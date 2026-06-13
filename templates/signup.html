@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Sign up{% endblock %}
+
+{% block content %}
+<section class="auth-page">
+  <div class="auth-wrap">
+
+    <div class="auth-brand">
+      <span class="auth-icon">📚</span>
+      <h1 class="auth-title">Create your shelf</h1>
+      <p class="auth-sub">A personal reading archive, just for you</p>
+    </div>
+
+    <form id="signupForm" method="POST" action="{{ url_for('signup') }}" novalidate>
+
+      <div class="field" id="field-username">
+        <label class="field-label" for="username">
+          Username <span class="required">*</span>
+        </label>
+        <input
+          id="username"
+          name="username"
+          type="text"
+          class="field-input"
+          value="{{ prefill.get('username', '') }}"
+          placeholder="letters and numbers only"
+          maxlength="50"
+          autocomplete="username"
+          autocapitalize="none"
+          autofocus
+        />
+        <div class="field-feedback" id="fb-username"></div>
+        <div class="field-hint">3–50 characters, letters and numbers only.</div>
+      </div>
+
+      <div class="field" id="field-password">
+        <label class="field-label" for="password">
+          Password <span class="required">*</span>
+          <button type="button" class="toggle-pw" data-target="password" aria-label="Show password">Show</button>
+        </label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          class="field-input"
+          placeholder="at least 8 characters"
+          autocomplete="new-password"
+        />
+        <div class="field-feedback" id="fb-password"></div>
+        <div class="pw-strength" id="pwStrength" aria-live="polite">
+          <div class="pw-strength-bar"><div class="pw-strength-fill" id="pwFill"></div></div>
+          <span class="pw-strength-label" id="pwLabel"></span>
+        </div>
+      </div>
+
+      <div class="field" id="field-confirm">
+        <label class="field-label" for="confirm">
+          Confirm password <span class="required">*</span>
+          <button type="button" class="toggle-pw" data-target="confirm" aria-label="Show confirm">Show</button>
+        </label>
+        <input
+          id="confirm"
+          name="confirm"
+          type="password"
+          class="field-input"
+          placeholder="repeat your password"
+          autocomplete="new-password"
+        />
+        <div class="field-feedback" id="fb-confirm"></div>
+      </div>
+
+      <button type="submit" class="btn btn--primary btn--full" id="submitBtn">Create account</button>
+    </form>
+
+    <p class="auth-switch">
+      Already have an account? <a href="{{ url_for('login') }}">Log in</a>
+    </p>
+
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+{% endblock %}

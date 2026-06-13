@@ -4,7 +4,7 @@
 {% block content %}
 <section class="page-hero">
   <div class="hero-inner">
-    <h1 class="hero-title">Your Library</h1>
+    <h1 class="hero-title">{{ session.username }}'s Library</h1>
     <p class="hero-sub">{{ books|length }} book{{ 's' if books|length != 1 else '' }} on the shelf</p>
   </div>
 </section>
