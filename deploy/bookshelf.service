@@ -1,49 +1,49 @@
 [Unit]
 Description=Bookshelf Service (Gunicorn)
-# Start only after the network and PostgreSQL are ready
 After=network.target postgresql.service
 Wants=postgresql.service
 
 [Service]
-# ── Identity ─────────────────────────────────────────────────────────────────
-# Run as a dedicated non-root user for safety.
-# Create with: sudo useradd --system --no-create-home --shell /usr/sbin/nologin bookshelf
+# ── Identity ──────────────────────────────────────────────────────────────────
 User=bookshelf
 Group=bookshelf
 
-# ── Paths ────────────────────────────────────────────────────────────────────
-# Adjust REPO_PATH to where your repo lives on the VM, e.g. /srv/bookshelf
+# ── Paths ─────────────────────────────────────────────────────────────────────
 WorkingDirectory=/srv/bookshelf
 
-# ── Environment ──────────────────────────────────────────────────────────────
-# Load secrets from the .env file sitting next to app.py
+# ── Environment ───────────────────────────────────────────────────────────────
+# Override HOME — the bookshelf system user has no /home/bookshelf directory.
+# Without this, Gunicorn's control server errors with "Permission denied: /home/bookshelf"
+Environment=HOME=/srv/bookshelf
 EnvironmentFile=/srv/bookshelf/.env
 
-# ── Process ──────────────────────────────────────────────────────────────────
-# Bind to a Unix socket instead of a TCP port.
-# Nginx will proxy to this socket (faster and safer than TCP).
+# ── Process ───────────────────────────────────────────────────────────────────
+# --umask 007 → socket created as 0660 (bookshelf:bookshelf rw-rw----)
+# www-data reaches it because we add www-data to the bookshelf group (see DEPLOY.md)
 ExecStart=/srv/bookshelf/venv/bin/gunicorn \
     --workers 2 \
     --bind unix:/run/bookshelf/bookshelf.sock \
+    --umask 007 \
     --access-logfile /var/log/bookshelf/access.log \
     --error-logfile  /var/log/bookshelf/error.log \
     --capture-output \
     --timeout 30 \
     app:app
 
-# ── Runtime directory (systemd creates /run/bookshelf automatically) ──────────
+# ── Runtime directory ─────────────────────────────────────────────────────────
+# systemd creates /run/bookshelf at start and removes it on stop.
+# 0770 → bookshelf:bookshelf can enter; www-data can too (after group add below)
 RuntimeDirectory=bookshelf
-RuntimeDirectoryMode=0750
+RuntimeDirectoryMode=0770
 
-# ── Restart policy ───────────────────────────────────────────────────────────
+# ── Restart policy ────────────────────────────────────────────────────────────
 Restart=on-failure
 RestartSec=5s
 
-# ── Hardening ────────────────────────────────────────────────────────────────
+# ── Hardening ─────────────────────────────────────────────────────────────────
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-# The service needs write access only to its log dir and the runtime socket dir
 ReadWritePaths=/var/log/bookshelf /run/bookshelf
 
 [Install]
