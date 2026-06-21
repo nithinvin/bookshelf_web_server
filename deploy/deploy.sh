@@ -15,22 +15,24 @@
 set -euo pipefail
 
 # ── CONFIG — edit these ───────────────────────────────────────────────────────
-VM_USER="ubuntu"                # your SSH user on the VM
-VM_HOST="YOUR_VM_IP"            # VM IP or domain
+#VM_USER="ubuntu"                # your SSH user on the VM
+#VM_HOST="YOUR_VM_IP"            # VM IP or domain
 APP_DIR="/srv/bookshelf"
 BRANCH="main"
 SERVICE="bookshelf"
 # ─────────────────────────────────────────────────────────────────────────────
 
-echo "==> Deploying branch '$BRANCH' to $VM_USER@$VM_HOST"
+#echo "==> Deploying branch '$BRANCH' to $VM_USER@$VM_HOST"
+echo "==> Deploying branch '$BRANCH'"
 
-ssh "$VM_USER@$VM_HOST" bash << REMOTE
+#ssh "$VM_USER@$VM_HOST" bash << REMOTE
+bash << REMOTE
 set -euo pipefail
 
 echo "--> Pulling latest code"
 cd "$APP_DIR"
 sudo git fetch origin "$BRANCH"
-sudo git reset --hard "origin/$BRANCH"
+#sudo git reset --hard "origin/$BRANCH"
 sudo chown -R "$SERVICE":"$SERVICE" "$APP_DIR"
 
 echo "--> Installing/updating Python dependencies"
@@ -54,5 +56,6 @@ REMOTE
 
 echo ""
 echo "✓ Deployment complete."
-echo "  Logs : ssh $VM_USER@$VM_HOST 'journalctl -u $SERVICE -f'"
-echo "  App  : http://$VM_HOST"
+#echo "  Logs : ssh $VM_USER@$VM_HOST 'journalctl -u $SERVICE -f'"
+echo "  Logs : journalctl -u $SERVICE -f'"
+#echo "  App  : http://$VM_HOST"
