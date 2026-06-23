@@ -170,15 +170,86 @@ tail -f /var/log/bookshelf/error.log
 
 ---
 
-## Adding HTTPS with Let's Encrypt (optional but recommended)
+## Enabling HTTPS (nbookshelf.ddns.net)
+
+You already have a free DDNS hostname pointing at your VM's IP:
+`nbookshelf.ddns.net`. Let's Encrypt can issue a real, trusted certificate
+for this because it's a proper hostname (not a bare IP).
+
+### Step 1 — Push the updated Nginx config
+
+`deploy/nginx_bookshelf.conf` now has `server_name nbookshelf.ddns.net;`
+instead of the placeholder. Deploy it:
+
+```bash
+git add deploy/nginx_bookshelf.conf app.py .env.example
+git commit -m "Configure domain for HTTPS"
+git push origin main
+./deploy/deploy.sh
+```
+
+Then on the VM, re-link the config (only needed if you edited it manually
+rather than through deploy.sh):
 
 ```bash
 ssh ubuntu@YOUR_VM_IP
-sudo apt install certbot python3-certbot-nginx -y
-sudo certbot --nginx -d yourdomain.com
+sudo cp /srv/bookshelf/deploy/nginx_bookshelf.conf /etc/nginx/sites-available/bookshelf
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Certbot edits the Nginx config automatically and sets up auto-renewal.
+Confirm the site is reachable over plain HTTP first:
+`http://nbookshelf.ddns.net` — this must work before Certbot can verify
+domain ownership.
+
+### Step 2 — Run the HTTPS setup script
+
+```bash
+scp deploy/setup_https.sh ubuntu@YOUR_VM_IP:~
+ssh ubuntu@YOUR_VM_IP
+chmod +x setup_https.sh
+sudo bash setup_https.sh
+```
+
+Before running, open the script and replace `your-email@example.com` with
+a real email — Let's Encrypt uses it only to warn you if a renewal ever fails.
+
+This script:
+1. Confirms `nbookshelf.ddns.net` actually resolves to this VM's IP
+2. Installs Certbot
+3. Requests the certificate and lets Certbot edit your Nginx config
+   automatically (adds the 443 block, redirects HTTP → HTTPS)
+4. Confirms the auto-renewal timer is active
+
+### Step 3 — Turn on secure cookies
+
+Once `https://nbookshelf.ddns.net` loads with a padlock and no warnings:
+
+```bash
+ssh ubuntu@YOUR_VM_IP
+sudo nano /srv/bookshelf/.env
+# change: FORCE_HTTPS=false  →  FORCE_HTTPS=true
+sudo systemctl restart bookshelf
+```
+
+This makes Flask's session cookie HTTPS-only, so login sessions can never
+leak over a plain-HTTP connection.
+
+### Step 4 — Verify renewal works
+
+Certificates from Let's Encrypt expire every 90 days but renew automatically
+via a systemd timer Certbot installs. Confirm it works without waiting:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+If that succeeds, you're done — nothing else to maintain.
+
+### A note on DuckDNS IP changes
+
+If your VM's IP ever changes (it generally won't on Hetzner unless you
+explicitly request a new one), update the DuckDNS record at duckdns.org,
+then re-run `sudo certbot renew` to make sure the cert still matches.
 
 ---
 
@@ -191,5 +262,7 @@ sudo ufw enable
 sudo ufw status
 ```
 
-Port 8010 does **not** need to be open anymore — Nginx handles all incoming
-traffic and proxies internally to the Gunicorn Unix socket.
+`Nginx Full` opens both port 80 (HTTP, needed for the redirect and for
+Certbot's renewal checks) and port 443 (HTTPS). Port 8010 does **not**
+need to be open — Nginx handles all incoming traffic and proxies
+internally to the Gunicorn Unix socket.

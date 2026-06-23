@@ -20,6 +20,16 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
 
+# ── Session cookie security ───────────────────────────────────────────────────
+# Once HTTPS is confirmed working, set FORCE_HTTPS=true in .env.
+# This makes the session cookie HTTPS-only — it will never be sent over
+# plain HTTP, which protects login sessions from being intercepted.
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,                              # JS can never read the cookie
+    SESSION_COOKIE_SAMESITE="Lax",                              # basic CSRF protection
+    SESSION_COOKIE_SECURE=os.environ.get("FORCE_HTTPS", "false").lower() == "true",
+)
+
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
