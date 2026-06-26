@@ -13,10 +13,34 @@
 set -euo pipefail
 
 DOMAIN="nbookshelf.ddns.net"
+ENV_FILE="/srv/bookshelf/.env"
+
+# ── Read ADMIN_EMAIL from .env ────────────────────────────────────────────────
+# Add this line to your .env on the VM (never commit it):
+#   ADMIN_EMAIL=you@example.com
+# The grep strips export/quotes/spaces; the script exits clearly if it's missing.
+if [ ! -f "$ENV_FILE" ]; then
+    echo "ERROR: $ENV_FILE not found. Cannot read ADMIN_EMAIL."
+    exit 1
+fi
+
+ADMIN_EMAIL=$(grep -E '^ADMIN_EMAIL=' "$ENV_FILE" \
+    | head -n1 \
+    | sed 's/^ADMIN_EMAIL=//' \
+    | tr -d '"'"'"' ')
+
+if [ -z "$ADMIN_EMAIL" ]; then
+    echo "ERROR: ADMIN_EMAIL is not set in $ENV_FILE."
+    echo "       Add this line to $ENV_FILE on the VM and re-run:"
+    echo "         ADMIN_EMAIL=you@example.com"
+    exit 1
+fi
+
+echo "    Using email: $ADMIN_EMAIL"
 
 echo "==> [1/4] Confirming DNS resolves correctly"
 RESOLVED_IP=$(dig +short "$DOMAIN" | tail -n1)
-MY_IP=$(curl -s ifconfig.me)
+MY_IP=$(curl -4 -s ifconfig.me)
 echo "    $DOMAIN resolves to: $RESOLVED_IP"
 echo "    This VM's public IP: $MY_IP"
 if [ "$RESOLVED_IP" != "$MY_IP" ]; then
@@ -42,7 +66,7 @@ certbot --nginx \
     --non-interactive \
     --agree-tos \
     --redirect \
-    -m "your-email@example.com"   # <-- replace with a real email for renewal alerts
+    -m "$ADMIN_EMAIL"
 
 echo "==> [4/4] Verifying auto-renewal is scheduled"
 systemctl list-timers | grep certbot || echo "    (certbot.timer should appear above; if not, check: systemctl status certbot.timer)"

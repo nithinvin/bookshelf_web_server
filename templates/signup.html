@@ -69,6 +69,16 @@
         <div class="field-feedback" id="fb-confirm"></div>
       </div>
 
+      <!-- hCaptcha widget — renders the challenge box -->
+      <div class="field" id="field-captcha">
+        <div class="h-captcha"
+             data-sitekey="{{ hcaptcha_site_key }}"
+             data-theme="light"
+             data-size="normal">
+        </div>
+        <div class="field-feedback" id="fb-captcha"></div>
+      </div>
+
       <button type="submit" class="btn btn--primary btn--full" id="submitBtn">Create account</button>
     </form>
 
@@ -81,5 +91,7 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- hCaptcha JS must load before auth.js so the widget is ready -->
+<script src="https://js.hcaptcha.com/1/api.js" async defer></script>
 <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 {% endblock %}

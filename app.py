@@ -7,6 +7,7 @@ Auth  : username + bcrypt password, Flask session
 import os
 import bcrypt
 import psycopg2
+import requests as http_requests
 from psycopg2.extras import RealDictCursor
 from functools import wraps
 from flask import (
@@ -29,6 +30,31 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",                              # basic CSRF protection
     SESSION_COOKIE_SECURE=os.environ.get("FORCE_HTTPS", "false").lower() == "true",
 )
+
+
+# ── hCaptcha ──────────────────────────────────────────────────────────────────
+HCAPTCHA_SECRET   = os.environ.get("HCAPTCHA_SECRET_KEY", "")
+HCAPTCHA_SITE_KEY = os.environ.get("HCAPTCHA_SITE_KEY", "")
+HCAPTCHA_VERIFY_URL = "https://api.hcaptcha.com/siteverify"
+
+def verify_hcaptcha(token: str) -> bool:
+    """
+    Send the token hCaptcha POSTed into our form to hCaptcha's API.
+    Returns True only when hCaptcha confirms it is genuine.
+    Never trust the client — always verify server-side.
+    """
+    if not token:
+        return False
+    try:
+        resp = http_requests.post(
+            HCAPTCHA_VERIFY_URL,
+            data={"secret": HCAPTCHA_SECRET, "response": token},
+            timeout=5,
+        )
+        return resp.json().get("success", False)
+    except Exception:
+        # If the hCaptcha API is unreachable, fail closed (deny the signup).
+        return False
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -124,6 +150,7 @@ def signup():
         username = request.form.get("username", "").strip().lower()
         password = request.form.get("password", "")
         confirm  = request.form.get("confirm",  "")
+        captcha_token = request.form.get("h-captcha-response", "")
 
         errors = []
         if not username:
@@ -143,6 +170,12 @@ def signup():
         if password and confirm != password:
             errors.append("Passwords do not match.")
 
+        # Verify captcha — checked independently so it always runs even if
+        # other fields have errors (avoids a second round-trip for the user).
+        captcha_ok = verify_hcaptcha(captcha_token)
+        if not captcha_ok:
+            errors.append("Please complete the captcha.")
+
         if not errors:
             db = get_db()
             with db.cursor() as cur:
@@ -153,7 +186,9 @@ def signup():
         if errors:
             for err in errors:
                 flash(err, "error")
-            return render_template("signup.html", prefill={"username": username})
+            return render_template("signup.html",
+                                   prefill={"username": username},
+                                   hcaptcha_site_key=HCAPTCHA_SITE_KEY)
 
         pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         db = get_db()
@@ -170,7 +205,8 @@ def signup():
         flash(f"Welcome to your shelf, {username}!", "success")
         return redirect(url_for("index"))
 
-    return render_template("signup.html", prefill={})
+    return render_template("signup.html", prefill={},
+                           hcaptcha_site_key=HCAPTCHA_SITE_KEY)
 
 
 @app.route("/login", methods=["GET", "POST"])
