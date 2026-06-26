@@ -1,10 +1,13 @@
 """
 app.py  —  Bookshelf Service
 Stack : Flask → Gunicorn → PostgreSQL (psycopg2)
-Auth  : username + bcrypt password, Flask session
+Auth  : username/password (bcrypt) + Google OAuth 2.0 (side-by-side)
+        Accounts are linked when Google email matches an existing user's email.
 """
 
 import os
+import re
+import secrets
 import bcrypt
 import psycopg2
 import requests as http_requests
@@ -22,27 +25,18 @@ app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
 
 # ── Session cookie security ───────────────────────────────────────────────────
-# Once HTTPS is confirmed working, set FORCE_HTTPS=true in .env.
-# This makes the session cookie HTTPS-only — it will never be sent over
-# plain HTTP, which protects login sessions from being intercepted.
 app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,                              # JS can never read the cookie
-    SESSION_COOKIE_SAMESITE="Lax",                              # basic CSRF protection
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("FORCE_HTTPS", "false").lower() == "true",
 )
 
-
 # ── hCaptcha ──────────────────────────────────────────────────────────────────
-HCAPTCHA_SECRET   = os.environ.get("HCAPTCHA_SECRET_KEY", "")
-HCAPTCHA_SITE_KEY = os.environ.get("HCAPTCHA_SITE_KEY", "")
+HCAPTCHA_SECRET     = os.environ.get("HCAPTCHA_SECRET_KEY", "")
+HCAPTCHA_SITE_KEY   = os.environ.get("HCAPTCHA_SITE_KEY", "")
 HCAPTCHA_VERIFY_URL = "https://api.hcaptcha.com/siteverify"
 
 def verify_hcaptcha(token: str) -> bool:
-    """
-    Send the token hCaptcha POSTed into our form to hCaptcha's API.
-    Returns True only when hCaptcha confirms it is genuine.
-    Never trust the client — always verify server-side.
-    """
     if not token:
         return False
     try:
@@ -53,8 +47,15 @@ def verify_hcaptcha(token: str) -> bool:
         )
         return resp.json().get("success", False)
     except Exception:
-        # If the hCaptcha API is unreachable, fail closed (deny the signup).
         return False
+
+# ── Google OAuth config ───────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_AUTH_URL      = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL     = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL  = "https://www.googleapis.com/oauth2/v3/userinfo"
+GOOGLE_SCOPES        = "openid email profile"
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -82,7 +83,6 @@ def close_db(error=None):
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
 def login_required(f):
-    """Decorator: redirect to login if user is not in session."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if "user_id" not in session:
@@ -96,13 +96,40 @@ def current_user_id():
     return session.get("user_id")
 
 
+def set_session(user):
+    """Populate session from a user row dict."""
+    session["user_id"]  = user["id"]
+    session["username"] = user["username"]
+
+
+def derive_username(name: str, email: str) -> str:
+    """
+    Turn a Google display name or email into a clean username candidate.
+    Strips non-alphanumeric chars. Falls back to the email local part.
+    """
+    base = re.sub(r"[^a-z0-9]", "", name.lower()) if name else ""
+    if not base:
+        base = re.sub(r"[^a-z0-9]", "", email.split("@")[0].lower())
+    return base[:40] or "user"
+
+
+def unique_username(db, base: str) -> str:
+    """
+    Ensure username is unique. If taken, append a short random suffix.
+    """
+    candidate = base
+    for _ in range(10):
+        with db.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s;", (candidate,))
+            if not cur.fetchone():
+                return candidate
+        candidate = base + secrets.token_hex(3)   # e.g. "nithin4a2f1c"
+    return base + secrets.token_hex(4)             # extremely unlikely to collide
+
+
 # ── Validation helper ─────────────────────────────────────────────────────────
 
 def parse_book_form(form):
-    """
-    Validate and coerce book form fields.
-    Returns (data_dict, errors_list).
-    """
     title  = form.get("title",  "").strip()
     author = form.get("author", "").strip()
     year   = form.get("year",   "").strip()
@@ -138,18 +165,17 @@ def parse_book_form(form):
     return {"title": title, "author": author, "year": year, "rating": rating}, []
 
 
-# ── Auth routes ───────────────────────────────────────────────────────────────
+# ── Auth routes — username / password ─────────────────────────────────────────
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
-    """Create a new account."""
     if "user_id" in session:
         return redirect(url_for("index"))
 
     if request.method == "POST":
-        username = request.form.get("username", "").strip().lower()
-        password = request.form.get("password", "")
-        confirm  = request.form.get("confirm",  "")
+        username      = request.form.get("username", "").strip().lower()
+        password      = request.form.get("password", "")
+        confirm       = request.form.get("confirm",  "")
         captcha_token = request.form.get("h-captcha-response", "")
 
         errors = []
@@ -170,10 +196,7 @@ def signup():
         if password and confirm != password:
             errors.append("Passwords do not match.")
 
-        # Verify captcha — checked independently so it always runs even if
-        # other fields have errors (avoids a second round-trip for the user).
-        captcha_ok = verify_hcaptcha(captcha_token)
-        if not captcha_ok:
+        if not verify_hcaptcha(captcha_token):
             errors.append("Please complete the captcha.")
 
         if not errors:
@@ -211,7 +234,6 @@ def signup():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    """Log in to an existing account."""
     if "user_id" in session:
         return redirect(url_for("index"))
 
@@ -227,10 +249,8 @@ def login():
             )
             user = cur.fetchone()
 
-        # Constant-time check; also run check on dummy hash if user missing
-        # to avoid timing-based username enumeration
         dummy_hash = b"$2b$12$invalidhashpadding000000000000000000000000000000000000"
-        stored = user["password_hash"].encode() if user else dummy_hash
+        stored = user["password_hash"].encode() if (user and user["password_hash"]) else dummy_hash
         match  = bcrypt.checkpw(password.encode(), stored)
 
         if not user or not match:
@@ -247,10 +267,152 @@ def login():
 
 @app.route("/logout", methods=["POST"])
 def logout():
-    """Clear the session and go to login."""
     session.clear()
     flash("You have been logged out.", "info")
     return redirect(url_for("login"))
+
+
+# ── Auth routes — Google OAuth 2.0 ───────────────────────────────────────────
+
+@app.route("/auth/google")
+def google_login():
+    """
+    Step 1: Redirect the user to Google's consent screen.
+    We generate a random 'state' token and store it in the session to
+    verify it on the way back — this prevents CSRF on the callback.
+    """
+    if "user_id" in session:
+        return redirect(url_for("index"))
+
+    state = secrets.token_urlsafe(32)
+    session["oauth_state"] = state
+
+    params = {
+        "client_id":     GOOGLE_CLIENT_ID,
+        "redirect_uri":  url_for("google_callback", _external=True),
+        "response_type": "code",
+        "scope":         GOOGLE_SCOPES,
+        "state":         state,
+        "access_type":   "online",
+        # 'select_account' forces the account picker even if already signed in,
+        # so users with multiple Google accounts can pick the right one.
+        "prompt":        "select_account",
+    }
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    return redirect(f"{GOOGLE_AUTH_URL}?{query}")
+
+
+@app.route("/auth/google/callback")
+def google_callback():
+    """
+    Step 2: Google redirects back here with ?code=...&state=...
+    We verify the state, exchange the code for tokens, fetch the user's
+    Google profile, then either log them in or create/link their account.
+    """
+    # ── CSRF check ────────────────────────────────────────────────────────────
+    returned_state = request.args.get("state", "")
+    expected_state = session.pop("oauth_state", None)
+    if not expected_state or returned_state != expected_state:
+        flash("Authentication failed (state mismatch). Please try again.", "error")
+        return redirect(url_for("login"))
+
+    # ── Error from Google (e.g. user cancelled) ───────────────────────────────
+    error = request.args.get("error")
+    if error:
+        flash("Google sign-in was cancelled or failed.", "error")
+        return redirect(url_for("login"))
+
+    code = request.args.get("code")
+    if not code:
+        flash("No authorisation code received from Google.", "error")
+        return redirect(url_for("login"))
+
+    # ── Exchange code for access token ────────────────────────────────────────
+    try:
+        token_resp = http_requests.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "code":          code,
+                "client_id":     GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri":  url_for("google_callback", _external=True),
+                "grant_type":    "authorization_code",
+            },
+            timeout=10,
+        )
+        token_resp.raise_for_status()
+        token_data   = token_resp.json()
+        access_token = token_data.get("access_token")
+    except Exception:
+        flash("Failed to get token from Google. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    # ── Fetch Google profile ──────────────────────────────────────────────────
+    try:
+        info_resp = http_requests.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        info_resp.raise_for_status()
+        google_info = info_resp.json()
+    except Exception:
+        flash("Failed to fetch your Google profile. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    google_id    = google_info.get("sub")          # stable unique Google user ID
+    google_email = google_info.get("email", "")
+    google_name  = google_info.get("name",  "")
+
+    if not google_id:
+        flash("Google did not return a valid user ID.", "error")
+        return redirect(url_for("login"))
+
+    db = get_db()
+
+    # ── Look up existing account ──────────────────────────────────────────────
+    # Priority order:
+    #   1. Match by google_id         → returning Google user, just log in
+    #   2. Match by email             → existing password user, link the accounts
+    #   3. No match                   → brand new user, create an account
+
+    with db.cursor() as cur:
+        # 1. Already linked?
+        cur.execute("SELECT * FROM users WHERE google_id = %s;", (google_id,))
+        user = cur.fetchone()
+
+    if not user and google_email:
+        with db.cursor() as cur:
+            # 2. Email match — link this Google account to the existing user
+            cur.execute("SELECT * FROM users WHERE email = %s;", (google_email,))
+            user = cur.fetchone()
+
+        if user:
+            with db.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET google_id = %s WHERE id = %s;",
+                    (google_id, user["id"]),
+                )
+            db.commit()
+            flash("Your Google account has been linked to your existing shelf.", "info")
+
+    if not user:
+        # 3. New user — derive a username from their Google name/email
+        base     = derive_username(google_name, google_email)
+        username = unique_username(db, base)
+
+        with db.cursor() as cur:
+            cur.execute(
+                """INSERT INTO users (username, password_hash, email, google_id)
+                   VALUES (%s, NULL, %s, %s) RETURNING *;""",
+                (username, google_email or None, google_id),
+            )
+            user = cur.fetchone()
+        db.commit()
+        flash(f"Welcome to your shelf, {user['username']}!", "success")
+
+    set_session(user)
+    return redirect(url_for("index"))
 
 
 # ── Book routes (all require login) ──────────────────────────────────────────
@@ -258,7 +420,6 @@ def logout():
 @app.route("/")
 @login_required
 def index():
-    """List books belonging to the logged-in user."""
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
@@ -299,7 +460,6 @@ def add_book():
 def edit_book(book_id):
     db = get_db()
 
-    # Ownership check — user can only edit their own books
     with db.cursor() as cur:
         cur.execute(
             "SELECT * FROM books WHERE id = %s AND user_id = %s;",

@@ -9,9 +9,14 @@ DROP TABLE IF EXISTS users;
 CREATE TABLE users (
     id            SERIAL PRIMARY KEY,
     username      VARCHAR(50)  NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,           -- bcrypt hash
+    password_hash VARCHAR(255),                        -- NULL for Google-only accounts
+    email         VARCHAR(255) UNIQUE,                 -- from Google profile; NULL until set
+    google_id     VARCHAR(255) UNIQUE,                 -- Google's stable user sub identifier
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_users_google_id ON users(google_id);
+CREATE INDEX idx_users_email     ON users(email);
 
 -- ── Books (each row belongs to one user) ─────────────────────────────────────
 CREATE TABLE books (
