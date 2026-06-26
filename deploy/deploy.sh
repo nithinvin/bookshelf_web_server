@@ -32,7 +32,7 @@ set -euo pipefail
 echo "--> Pulling latest code"
 cd "$APP_DIR"
 sudo git fetch origin "$BRANCH"
-#sudo git reset --hard "origin/$BRANCH"
+sudo git reset --hard "origin/$BRANCH"
 sudo chown -R "$SERVICE":"$SERVICE" "$APP_DIR"
 
 echo "--> Installing/updating Python dependencies"
