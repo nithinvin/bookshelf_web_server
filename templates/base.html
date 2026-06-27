@@ -21,6 +21,12 @@
       <nav class="site-nav">
         {% if session.user_id %}
           <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">Library</a>
+          <a href="{{ url_for('friends') }}" class="nav-link nav-link--badge {% if request.endpoint == 'friends' %}active{% endif %}">
+            Friends
+            {% if pending_count > 0 %}
+              <span class="nav-badge">{{ pending_count }}</span>
+            {% endif %}
+          </a>
           <a href="{{ url_for('add_book') }}" class="nav-link nav-cta">+ Add Book</a>
           <div class="nav-user">
             <span class="nav-username">{{ session.username }}</span>

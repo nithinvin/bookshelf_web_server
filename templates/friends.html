@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Friends{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="hero-inner">
+    <h1 class="hero-title">Friends</h1>
+    <p class="hero-sub">{{ accepted|length }} friend{{ 's' if accepted|length != 1 else '' }}</p>
+  </div>
+</section>
+
+<div class="friends-page">
+
+  {# ── Incoming requests ─────────────────────────────────────────── #}
+  {% if incoming %}
+  <section class="friends-section">
+    <h2 class="friends-heading">
+      Pending requests
+      <span class="badge-inline">{{ incoming|length }}</span>
+    </h2>
+    <ul class="user-list">
+      {% for req in incoming %}
+      <li class="user-card user-card--pending">
+        <div class="user-avatar">{{ req.username[0].upper() }}</div>
+        <div class="user-info">
+          <span class="user-name">{{ req.username }}</span>
+          <span class="user-tag">wants to be friends</span>
+        </div>
+        <div class="user-actions">
+          <form method="POST" action="{{ url_for('accept_request', friendship_id=req.friendship_id) }}">
+            <button class="btn btn--primary btn--sm">Accept</button>
+          </form>
+          <form method="POST" action="{{ url_for('decline_request', friendship_id=req.friendship_id) }}">
+            <button class="btn btn--ghost btn--sm">Decline</button>
+          </form>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {# ── Accepted friends ──────────────────────────────────────────── #}
+  <section class="friends-section">
+    <h2 class="friends-heading">Your friends</h2>
+    {% if accepted %}
+    <ul class="user-list">
+      {% for friend in accepted %}
+      <li class="user-card">
+        <div class="user-avatar">{{ friend.username[0].upper() }}</div>
+        <div class="user-info">
+          <span class="user-name">{{ friend.username }}</span>
+        </div>
+        <div class="user-actions">
+          <a href="{{ url_for('view_shelf', user_id=friend.id) }}" class="btn btn--ghost btn--sm">View shelf</a>
+          <form method="POST" action="{{ url_for('remove_friend', friend_id=friend.id) }}"
+                onsubmit="return confirm('Remove {{ friend.username }} as a friend?')">
+            <button class="btn btn--danger btn--sm">Remove</button>
+          </form>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state empty-state--inline">
+      <p class="empty-icon">🤝</p>
+      <p class="empty-msg">No friends yet.<br>Search for people to add.</p>
+      <a href="{{ url_for('user_search') }}" class="btn btn--primary">Find friends</a>
+    </div>
+    {% endif %}
+  </section>
+
+  {# ── Outgoing pending ──────────────────────────────────────────── #}
+  {% if outgoing %}
+  <section class="friends-section">
+    <h2 class="friends-heading">Sent requests</h2>
+    <ul class="user-list">
+      {% for req in outgoing %}
+      <li class="user-card user-card--outgoing">
+        <div class="user-avatar user-avatar--muted">{{ req.username[0].upper() }}</div>
+        <div class="user-info">
+          <span class="user-name">{{ req.username }}</span>
+          <span class="user-tag">request pending</span>
+        </div>
+        <div class="user-actions">
+          <form method="POST" action="{{ url_for('decline_request', friendship_id=req.friendship_id) }}">
+            <button class="btn btn--ghost btn--sm">Cancel</button>
+          </form>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <div class="friends-find-link">
+    <a href="{{ url_for('user_search') }}" class="btn btn--ghost">🔍 Find more friends</a>
+  </div>
+
+</div>
+{% endblock %}

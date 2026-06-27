@@ -1,8 +1,8 @@
 """
 app.py  —  Bookshelf Service
 Stack : Flask → Gunicorn → PostgreSQL (psycopg2)
-Auth  : username/password (bcrypt) + Google OAuth 2.0 (side-by-side)
-        Accounts are linked when Google email matches an existing user's email.
+Auth  : username/password (bcrypt) + Google OAuth 2.0
+Social: friend requests, accepted friendships, read-only shelf views
 """
 
 import os
@@ -36,7 +36,7 @@ HCAPTCHA_SECRET     = os.environ.get("HCAPTCHA_SECRET_KEY", "")
 HCAPTCHA_SITE_KEY   = os.environ.get("HCAPTCHA_SITE_KEY", "")
 HCAPTCHA_VERIFY_URL = "https://api.hcaptcha.com/siteverify"
 
-def verify_hcaptcha(token: str) -> bool:
+def verify_hcaptcha(token):
     if not token:
         return False
     try:
@@ -49,7 +49,7 @@ def verify_hcaptcha(token: str) -> bool:
     except Exception:
         return False
 
-# ── Google OAuth config ───────────────────────────────────────────────────────
+# ── Google OAuth ──────────────────────────────────────────────────────────────
 GOOGLE_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_AUTH_URL      = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -97,34 +97,86 @@ def current_user_id():
 
 
 def set_session(user):
-    """Populate session from a user row dict."""
     session["user_id"]  = user["id"]
     session["username"] = user["username"]
 
 
-def derive_username(name: str, email: str) -> str:
-    """
-    Turn a Google display name or email into a clean username candidate.
-    Strips non-alphanumeric chars. Falls back to the email local part.
-    """
+def derive_username(name, email):
     base = re.sub(r"[^a-z0-9]", "", name.lower()) if name else ""
     if not base:
         base = re.sub(r"[^a-z0-9]", "", email.split("@")[0].lower())
     return base[:40] or "user"
 
 
-def unique_username(db, base: str) -> str:
-    """
-    Ensure username is unique. If taken, append a short random suffix.
-    """
+def unique_username(db, base):
     candidate = base
     for _ in range(10):
         with db.cursor() as cur:
             cur.execute("SELECT id FROM users WHERE username = %s;", (candidate,))
             if not cur.fetchone():
                 return candidate
-        candidate = base + secrets.token_hex(3)   # e.g. "nithin4a2f1c"
-    return base + secrets.token_hex(4)             # extremely unlikely to collide
+        candidate = base + secrets.token_hex(3)
+    return base + secrets.token_hex(4)
+
+
+# ── Friendship helpers ────────────────────────────────────────────────────────
+
+def get_pending_count(user_id):
+    """Number of pending requests addressed TO this user — shown as nav badge."""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM friendships "
+            "WHERE addressee_id = %s AND status = 'pending';",
+            (user_id,),
+        )
+        return cur.fetchone()["n"]
+
+
+def friendship_status(db, me, other):
+    """
+    Return the relationship between `me` and `other`:
+      'accepted', 'pending_sent', 'pending_received', or None
+    """
+    with db.cursor() as cur:
+        cur.execute(
+            """SELECT status, requester_id FROM friendships
+               WHERE (requester_id = %s AND addressee_id = %s)
+                  OR (requester_id = %s AND addressee_id = %s);""",
+            (me, other, other, me),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    if row["status"] == "accepted":
+        return "accepted"
+    return "pending_sent" if row["requester_id"] == me else "pending_received"
+
+
+def are_friends(db, me, other):
+    with db.cursor() as cur:
+        cur.execute(
+            """SELECT 1 FROM friendships
+               WHERE status = 'accepted'
+                 AND ((requester_id = %s AND addressee_id = %s)
+                   OR (requester_id = %s AND addressee_id = %s));""",
+            (me, other, other, me),
+        )
+        return cur.fetchone() is not None
+
+
+# ── Context processor — injects pending_count into every template ─────────────
+
+@app.context_processor
+def inject_pending_count():
+    """Makes {{ pending_count }} available in every template automatically."""
+    if "user_id" in session:
+        try:
+            count = get_pending_count(session["user_id"])
+        except Exception:
+            count = 0
+        return {"pending_count": count}
+    return {"pending_count": 0}
 
 
 # ── Validation helper ─────────────────────────────────────────────────────────
@@ -165,7 +217,7 @@ def parse_book_form(form):
     return {"title": title, "author": author, "year": year, "rating": rating}, []
 
 
-# ── Auth routes — username / password ─────────────────────────────────────────
+# ── Auth routes — username / password ────────────────────────────────────────
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -276,17 +328,10 @@ def logout():
 
 @app.route("/auth/google")
 def google_login():
-    """
-    Step 1: Redirect the user to Google's consent screen.
-    We generate a random 'state' token and store it in the session to
-    verify it on the way back — this prevents CSRF on the callback.
-    """
     if "user_id" in session:
         return redirect(url_for("index"))
-
     state = secrets.token_urlsafe(32)
     session["oauth_state"] = state
-
     params = {
         "client_id":     GOOGLE_CLIENT_ID,
         "redirect_uri":  url_for("google_callback", _external=True),
@@ -294,8 +339,6 @@ def google_login():
         "scope":         GOOGLE_SCOPES,
         "state":         state,
         "access_type":   "online",
-        # 'select_account' forces the account picker even if already signed in,
-        # so users with multiple Google accounts can pick the right one.
         "prompt":        "select_account",
     }
     query = "&".join(f"{k}={v}" for k, v in params.items())
@@ -304,19 +347,12 @@ def google_login():
 
 @app.route("/auth/google/callback")
 def google_callback():
-    """
-    Step 2: Google redirects back here with ?code=...&state=...
-    We verify the state, exchange the code for tokens, fetch the user's
-    Google profile, then either log them in or create/link their account.
-    """
-    # ── CSRF check ────────────────────────────────────────────────────────────
     returned_state = request.args.get("state", "")
     expected_state = session.pop("oauth_state", None)
     if not expected_state or returned_state != expected_state:
         flash("Authentication failed (state mismatch). Please try again.", "error")
         return redirect(url_for("login"))
 
-    # ── Error from Google (e.g. user cancelled) ───────────────────────────────
     error = request.args.get("error")
     if error:
         flash("Google sign-in was cancelled or failed.", "error")
@@ -327,7 +363,6 @@ def google_callback():
         flash("No authorisation code received from Google.", "error")
         return redirect(url_for("login"))
 
-    # ── Exchange code for access token ────────────────────────────────────────
     try:
         token_resp = http_requests.post(
             GOOGLE_TOKEN_URL,
@@ -341,13 +376,11 @@ def google_callback():
             timeout=10,
         )
         token_resp.raise_for_status()
-        token_data   = token_resp.json()
-        access_token = token_data.get("access_token")
+        access_token = token_resp.json().get("access_token")
     except Exception:
         flash("Failed to get token from Google. Please try again.", "error")
         return redirect(url_for("login"))
 
-    # ── Fetch Google profile ──────────────────────────────────────────────────
     try:
         info_resp = http_requests.get(
             GOOGLE_USERINFO_URL,
@@ -360,7 +393,7 @@ def google_callback():
         flash("Failed to fetch your Google profile. Please try again.", "error")
         return redirect(url_for("login"))
 
-    google_id    = google_info.get("sub")          # stable unique Google user ID
+    google_id    = google_info.get("sub")
     google_email = google_info.get("email", "")
     google_name  = google_info.get("name",  "")
 
@@ -370,41 +403,28 @@ def google_callback():
 
     db = get_db()
 
-    # ── Look up existing account ──────────────────────────────────────────────
-    # Priority order:
-    #   1. Match by google_id         → returning Google user, just log in
-    #   2. Match by email             → existing password user, link the accounts
-    #   3. No match                   → brand new user, create an account
-
     with db.cursor() as cur:
-        # 1. Already linked?
         cur.execute("SELECT * FROM users WHERE google_id = %s;", (google_id,))
         user = cur.fetchone()
 
     if not user and google_email:
         with db.cursor() as cur:
-            # 2. Email match — link this Google account to the existing user
             cur.execute("SELECT * FROM users WHERE email = %s;", (google_email,))
             user = cur.fetchone()
-
         if user:
             with db.cursor() as cur:
-                cur.execute(
-                    "UPDATE users SET google_id = %s WHERE id = %s;",
-                    (google_id, user["id"]),
-                )
+                cur.execute("UPDATE users SET google_id = %s WHERE id = %s;",
+                            (google_id, user["id"]))
             db.commit()
             flash("Your Google account has been linked to your existing shelf.", "info")
 
     if not user:
-        # 3. New user — derive a username from their Google name/email
         base     = derive_username(google_name, google_email)
         username = unique_username(db, base)
-
         with db.cursor() as cur:
             cur.execute(
-                """INSERT INTO users (username, password_hash, email, google_id)
-                   VALUES (%s, NULL, %s, %s) RETURNING *;""",
+                "INSERT INTO users (username, password_hash, email, google_id) "
+                "VALUES (%s, NULL, %s, %s) RETURNING *;",
                 (username, google_email or None, google_id),
             )
             user = cur.fetchone()
@@ -415,7 +435,7 @@ def google_callback():
     return redirect(url_for("index"))
 
 
-# ── Book routes (all require login) ──────────────────────────────────────────
+# ── Book routes ───────────────────────────────────────────────────────────────
 
 @app.route("/")
 @login_required
@@ -459,7 +479,6 @@ def add_book():
 @login_required
 def edit_book(book_id):
     db = get_db()
-
     with db.cursor() as cur:
         cur.execute(
             "SELECT * FROM books WHERE id = %s AND user_id = %s;",
@@ -503,15 +522,234 @@ def delete_book(book_id):
         )
         book = cur.fetchone()
         if book:
-            cur.execute(
-                "DELETE FROM books WHERE id = %s AND user_id = %s;",
-                (book_id, current_user_id()),
-            )
+            cur.execute("DELETE FROM books WHERE id = %s AND user_id = %s;",
+                        (book_id, current_user_id()))
             db.commit()
             flash(f'"{book["title"]}" removed from your shelf.', "success")
         else:
             flash("Book not found.", "error")
     return redirect(url_for("index"))
+
+
+# ── Friends routes ────────────────────────────────────────────────────────────
+
+@app.route("/friends")
+@login_required
+def friends():
+    """
+    Friends page — three panels:
+      1. Accepted friends list
+      2. Pending incoming requests (with Accept / Decline buttons)
+      3. Pending outgoing requests
+    """
+    me = current_user_id()
+    db = get_db()
+
+    with db.cursor() as cur:
+        # Accepted friends — return the OTHER user's details
+        cur.execute(
+            """SELECT u.id, u.username
+               FROM friendships f
+               JOIN users u ON u.id = CASE
+                   WHEN f.requester_id = %s THEN f.addressee_id
+                   ELSE f.requester_id END
+               WHERE (f.requester_id = %s OR f.addressee_id = %s)
+                 AND f.status = 'accepted'
+               ORDER BY u.username;""",
+            (me, me, me),
+        )
+        accepted = cur.fetchall()
+
+        # Incoming pending requests
+        cur.execute(
+            """SELECT f.id AS friendship_id, u.id, u.username
+               FROM friendships f
+               JOIN users u ON u.id = f.requester_id
+               WHERE f.addressee_id = %s AND f.status = 'pending'
+               ORDER BY f.created_at DESC;""",
+            (me,),
+        )
+        incoming = cur.fetchall()
+
+        # Outgoing pending requests
+        cur.execute(
+            """SELECT f.id AS friendship_id, u.id, u.username
+               FROM friendships f
+               JOIN users u ON u.id = f.addressee_id
+               WHERE f.requester_id = %s AND f.status = 'pending'
+               ORDER BY f.created_at DESC;""",
+            (me,),
+        )
+        outgoing = cur.fetchall()
+
+    return render_template("friends.html",
+                           accepted=accepted,
+                           incoming=incoming,
+                           outgoing=outgoing)
+
+
+@app.route("/users/search")
+@login_required
+def user_search():
+    """Search users by username; returns relationship status for each result."""
+    query = request.args.get("q", "").strip().lower()
+    me    = current_user_id()
+    results = []
+
+    if query and len(query) >= 2:
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                """SELECT id, username FROM users
+                   WHERE username ILIKE %s AND id <> %s
+                   ORDER BY username LIMIT 20;""",
+                (f"%{query}%", me),
+            )
+            users = cur.fetchall()
+
+        for u in users:
+            status = friendship_status(db, me, u["id"])
+            results.append({**u, "status": status})
+
+    return render_template("user_search.html", query=query, results=results)
+
+
+@app.route("/friends/request/<int:addressee_id>", methods=["POST"])
+@login_required
+def send_request(addressee_id):
+    me = current_user_id()
+    if me == addressee_id:
+        flash("You can't friend yourself.", "error")
+        return redirect(url_for("user_search"))
+
+    db = get_db()
+    # Check the target user exists
+    with db.cursor() as cur:
+        cur.execute("SELECT username FROM users WHERE id = %s;", (addressee_id,))
+        target = cur.fetchone()
+    if not target:
+        flash("User not found.", "error")
+        return redirect(url_for("user_search"))
+
+    # Check no relationship already exists
+    existing = friendship_status(db, me, addressee_id)
+    if existing:
+        flash("A friend request already exists with this user.", "info")
+        return redirect(url_for("user_search", q=request.form.get("q", "")))
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO friendships (requester_id, addressee_id) VALUES (%s, %s);",
+            (me, addressee_id),
+        )
+    db.commit()
+    flash(f"Friend request sent to {target['username']}.", "success")
+    return redirect(url_for("user_search", q=request.form.get("q", "")))
+
+
+@app.route("/friends/accept/<int:friendship_id>", methods=["POST"])
+@login_required
+def accept_request(friendship_id):
+    me = current_user_id()
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM friendships WHERE id = %s AND addressee_id = %s AND status = 'pending';",
+            (friendship_id, me),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        flash("Request not found.", "error")
+        return redirect(url_for("friends"))
+
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE friendships SET status = 'accepted' WHERE id = %s;",
+            (friendship_id,),
+        )
+    db.commit()
+
+    # Look up who sent it so we can greet by name
+    db2 = get_db()
+    with db2.cursor() as cur:
+        cur.execute("SELECT username FROM users WHERE id = %s;", (row["requester_id"],))
+        sender = cur.fetchone()
+    flash(f"You and {sender['username']} are now friends!", "success")
+    return redirect(url_for("friends"))
+
+
+@app.route("/friends/decline/<int:friendship_id>", methods=["POST"])
+@login_required
+def decline_request(friendship_id):
+    """Decline or cancel a request — deletes the row entirely."""
+    me = current_user_id()
+    db = get_db()
+    with db.cursor() as cur:
+        # Allow both the addressee (decline) and requester (cancel) to delete
+        cur.execute(
+            """DELETE FROM friendships
+               WHERE id = %s
+                 AND (addressee_id = %s OR requester_id = %s);""",
+            (friendship_id, me, me),
+        )
+    db.commit()
+    flash("Friend request removed.", "info")
+    return redirect(url_for("friends"))
+
+
+@app.route("/friends/remove/<int:friend_id>", methods=["POST"])
+@login_required
+def remove_friend(friend_id):
+    me = current_user_id()
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """DELETE FROM friendships
+               WHERE status = 'accepted'
+                 AND ((requester_id = %s AND addressee_id = %s)
+                   OR (requester_id = %s AND addressee_id = %s));""",
+            (me, friend_id, friend_id, me),
+        )
+    db.commit()
+    flash("Friend removed.", "info")
+    return redirect(url_for("friends"))
+
+
+@app.route("/shelf/<int:user_id>")
+@login_required
+def view_shelf(user_id):
+    """
+    Read-only view of a friend's shelf.
+    Only accessible if the two users are accepted friends.
+    """
+    me = current_user_id()
+    if me == user_id:
+        return redirect(url_for("index"))
+
+    db = get_db()
+
+    # Guard: must be accepted friends
+    if not are_friends(db, me, user_id):
+        flash("You can only view shelves of your friends.", "error")
+        return redirect(url_for("friends"))
+
+    with db.cursor() as cur:
+        cur.execute("SELECT username FROM users WHERE id = %s;", (user_id,))
+        owner = cur.fetchone()
+
+    if not owner:
+        flash("User not found.", "error")
+        return redirect(url_for("friends"))
+
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM books WHERE user_id = %s ORDER BY title ASC;",
+            (user_id,),
+        )
+        books = cur.fetchall()
+
+    return render_template("shelf_view.html", books=books, owner=owner)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

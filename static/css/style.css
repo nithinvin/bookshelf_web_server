@@ -810,3 +810,207 @@ a:hover { color: var(--rust-light); }
   height: 1px;
   background: var(--border);
 }
+
+
+/* ── Nav badge ───────────────────────────────────────────────────────────── */
+.nav-link--badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+}
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rust);
+  color: white;
+  font-size: .65rem;
+  font-family: var(--font-body);
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 100px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+/* ── Friends page layout ─────────────────────────────────────────────────── */
+.friends-page {
+  max-width: 720px;
+  margin: 2rem auto 4rem;
+  padding: 0 2rem;
+}
+
+.friends-section {
+  margin-bottom: 2.5rem;
+}
+
+.friends-heading {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding-bottom: .5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.badge-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rust);
+  color: white;
+  font-size: .7rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 100px;
+  font-family: var(--font-body);
+}
+
+/* ── User list & cards ───────────────────────────────────────────────────── */
+.user-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+
+.user-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition);
+}
+.user-card:hover { box-shadow: var(--shadow-md); }
+
+.user-card--pending { border-left: 3px solid var(--rust); }
+.user-card--outgoing { opacity: .8; }
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--rust), var(--gold));
+  color: white;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.user-avatar--muted {
+  background: var(--cream-dark);
+  color: var(--ink-light);
+}
+
+.user-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+
+.user-name {
+  font-weight: 500;
+  font-size: .95rem;
+  color: var(--ink);
+}
+
+.user-tag {
+  font-size: .75rem;
+  color: var(--ink-light);
+  font-style: italic;
+}
+.user-tag--green { color: var(--sage); }
+.user-tag--amber { color: var(--gold); }
+
+.user-actions {
+  display: flex;
+  gap: .4rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.status-label {
+  font-size: .78rem;
+  color: var(--ink-light);
+  font-style: italic;
+  padding: 0 .5rem;
+}
+
+/* ── Search form on user search page ────────────────────────────────────── */
+.search-form { width: 100%; }
+
+.search-wrap--wide {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  background: white;
+  border: 1.5px solid var(--border);
+  border-radius: 100px;
+  padding-right: .4rem;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.search-wrap--wide:focus-within {
+  border-color: var(--rust);
+  box-shadow: 0 0 0 3px rgba(179,74,42,.1);
+}
+.search-wrap--wide .search-icon {
+  position: static;
+  padding-left: .9rem;
+  color: var(--ink-light);
+}
+.search-wrap--wide .search-input {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  flex: 1;
+  padding-left: .4rem;
+}
+.search-wrap--wide .search-input:focus {
+  box-shadow: none;
+  border: none;
+  outline: none;
+}
+.search-submit { border-radius: 100px; }
+
+/* ── Read-only shelf view ────────────────────────────────────────────────── */
+.book-spine--friend {
+  background: linear-gradient(180deg, var(--sage) 0%, #7aaf38 100%);
+}
+
+.readonly-label {
+  font-size: .78rem;
+  background: var(--sage-pale);
+  color: var(--sage);
+  padding: .15rem .5rem;
+  border-radius: 100px;
+  font-style: normal;
+}
+
+/* ── Inline empty state (smaller, no full-page height) ───────────────────── */
+.empty-state--inline {
+  padding: 2.5rem 1rem;
+}
+
+.friends-find-link {
+  margin-top: 1rem;
+  text-align: center;
+}

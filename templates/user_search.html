@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Find Friends{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="hero-inner">
+    <h1 class="hero-title">Find Friends</h1>
+    <p class="hero-sub">Search by username</p>
+  </div>
+</section>
+
+<div class="friends-page">
+  <section class="friends-section">
+
+    <form method="GET" action="{{ url_for('user_search') }}" class="search-form">
+      <div class="search-wrap search-wrap--wide">
+        <span class="search-icon">&#9906;</span>
+        <input
+          type="text"
+          name="q"
+          class="search-input"
+          value="{{ query }}"
+          placeholder="Type a username…"
+          autocomplete="off"
+          autocapitalize="none"
+          autofocus
+          minlength="2"
+        />
+        <button type="submit" class="btn btn--primary btn--sm search-submit">Search</button>
+      </div>
+    </form>
+
+    {% if query %}
+      {% if results %}
+      <ul class="user-list" style="margin-top:1.5rem">
+        {% for user in results %}
+        <li class="user-card">
+          <div class="user-avatar">{{ user.username[0].upper() }}</div>
+          <div class="user-info">
+            <span class="user-name">{{ user.username }}</span>
+            {% if user.status == 'accepted' %}
+              <span class="user-tag user-tag--green">Already friends</span>
+            {% elif user.status == 'pending_sent' %}
+              <span class="user-tag">Request sent</span>
+            {% elif user.status == 'pending_received' %}
+              <span class="user-tag user-tag--amber">Wants to be friends with you</span>
+            {% endif %}
+          </div>
+          <div class="user-actions">
+            {% if user.status == 'accepted' %}
+              <a href="{{ url_for('view_shelf', user_id=user.id) }}" class="btn btn--ghost btn--sm">View shelf</a>
+            {% elif user.status == 'pending_sent' %}
+              <span class="status-label">Pending</span>
+            {% elif user.status == 'pending_received' %}
+              <a href="{{ url_for('friends') }}" class="btn btn--primary btn--sm">Respond</a>
+            {% else %}
+              <form method="POST" action="{{ url_for('send_request', addressee_id=user.id) }}">
+                <input type="hidden" name="q" value="{{ query }}" />
+                <button class="btn btn--primary btn--sm">Add friend</button>
+              </form>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state empty-state--inline" style="margin-top:2rem">
+        <p class="empty-icon">🔍</p>
+        <p class="empty-msg">No users found for "<strong>{{ query }}</strong>".</p>
+      </div>
+      {% endif %}
+    {% endif %}
+
+  </section>
+</div>
+{% endblock %}

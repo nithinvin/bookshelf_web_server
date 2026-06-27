@@ -29,5 +29,19 @@ CREATE TABLE books (
     added_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
--- Index so "SELECT * FROM books WHERE user_id = ?" is fast
 CREATE INDEX idx_books_user_id ON books(user_id);
+
+-- ── Friendships ───────────────────────────────────────────────────────────────
+CREATE TABLE friendships (
+    id           SERIAL PRIMARY KEY,
+    requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    addressee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status       VARCHAR(10) NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending', 'accepted')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT no_duplicate_requests UNIQUE (requester_id, addressee_id),
+    CONSTRAINT no_self_friendship    CHECK  (requester_id <> addressee_id)
+);
+
+CREATE INDEX idx_friends_requester ON friendships(requester_id, status);
+CREATE INDEX idx_friends_addressee ON friendships(addressee_id, status);
