@@ -1,0 +1,7 @@
+- Backup outside the VM for resilience
+- More detailed Logging for problem diagnosis
+- Rate limiting to prevent DDOS attack
+- Site Reliability Engineering. Telegram messages to monitor the service.
+- Data analytics
+- AI for customers
+
