@@ -1,0 +1,3 @@
+- Backups can be stored outside of the server to increase resilience
+- Data analytics of the books data from all users and recommendations can be implemented
+- AI usage to to improve recommendations
