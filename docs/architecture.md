@@ -9,60 +9,33 @@ Bookshelf is a social book-tracking web application. Users maintain a personal s
 ## Infrastructure Layout
 
 ```mermaid
-block-beta
-  columns 3
+flowchart TD
+    Internet(["🌐 Internet / Browser"])
+    DDNS(["nbookshelf.ddns.net\nNo-IP DDNS"])
 
-  Internet(["Internet / Browser"]):::ext
-  space
-  DDNS(["nbookshelf.ddns.net\n(No-IP DDNS)"]):::ext
+    subgraph VM["Hetzner Cloud VM"]
+        direction TB
+        Nginx["Nginx\nReverse Proxy + TLS termination"]
+        Static["Static files /static/\nserved by Nginx, 7-day cache"]
+        Gunicorn["Gunicorn\n2 workers · Unix socket"]
+        Flask["Flask app.py"]
+        Env[".env — Secrets & config"]
+        Postgres[("PostgreSQL\nbk_db")]
+        Logs["Logs\n/var/log/bookshelf/"]
+    end
 
-  space:3
+    GoogleOAuth(["Google OAuth 2.0\naccounts.google.com"])
+    hCaptcha(["hCaptcha\napi.hcaptcha.com"])
 
-  block:VM["Hetzner Cloud VM"]:3
-    columns 3
-    Nginx["Nginx\n(Reverse Proxy + TLS)"]:::infra
-    space
-    Static["Static Files\n/static/ (served by Nginx)"]:::infra
-
-    space:3
-
-    Gunicorn["Gunicorn\n(2 workers, Unix socket)"]:::app
-    space
-    Env[".env\n(Secrets)"]:::cfg
-
-    space:3
-
-    Flask["Flask Application\napp.py"]:::app
-    space
-    Venv["Python venv\n/srv/bookshelf/venv"]:::cfg
-
-    space:3
-
-    Postgres["PostgreSQL\nbk_db"]:::db
-    space
-    Logs["Log Files\n/var/log/bookshelf/"]:::cfg
-  end
-
-  space:3
-
-  GoogleOAuth(["Google OAuth 2.0\naccounts.google.com"]):::ext
-  space
-  hCaptcha(["hCaptcha\napi.hcaptcha.com"]):::ext
-
-  Internet --> DDNS
-  DDNS --> Nginx
-  Nginx --> Gunicorn
-  Nginx --> Static
-  Gunicorn --> Flask
-  Flask --> Postgres
-  Flask --> GoogleOAuth
-  Flask --> hCaptcha
-
-  classDef ext fill:#dbeafe,stroke:#3b82f6,color:#1e40af
-  classDef infra fill:#fef9c3,stroke:#ca8a04,color:#713f12
-  classDef app fill:#dcfce7,stroke:#16a34a,color:#14532d
-  classDef db fill:#fce7f3,stroke:#db2777,color:#831843
-  classDef cfg fill:#f3f4f6,stroke:#6b7280,color:#374151
+    Internet --> DDNS --> Nginx
+    Nginx -->|"GET /static/**"| Static
+    Nginx -->|"all other requests"| Gunicorn
+    Gunicorn --> Flask
+    Env -. loaded at startup .-> Flask
+    Flask --> Postgres
+    Flask <-->|"OAuth exchange"| GoogleOAuth
+    Flask <-->|"captcha verify"| hCaptcha
+    Flask --> Logs
 ```
 
 ---
@@ -185,43 +158,31 @@ flowchart LR
 ## Process & Networking
 
 ```mermaid
-block-beta
-  columns 3
+flowchart TD
+    Browser(["Browser"])
+    LE(["Let's Encrypt / Certbot"])
 
-  Client(["Browser"]):::ext
-  space
-  LetsEncrypt(["Let's Encrypt\nCertbot"]):::ext
+    subgraph Nginx["Nginx — port 80 / 443"]
+        TLS["TLS termination\nfullchain.pem + privkey.pem"]
+        StaticServe["Serve /static/**\n7-day immutable cache"]
+        ProxyPass["proxy_pass\nHTTP → Unix socket"]
+    end
 
-  space:3
+    subgraph Gunicorn["Gunicorn — /run/bookshelf/bookshelf.sock"]
+        W1["Worker 1"]
+        W2["Worker 2"]
+    end
 
-  block:NginxBlock["Nginx (port 80 / 443)"]:3
-    columns 3
-    TLS["TLS Termination\n(fullchain + privkey)"]
-    StaticServe["Static Files\n7-day cache"]
-    ProxyPass["proxy_pass to\nUnix socket"]
-  end
+    Systemd["systemd\nbookshelf.service\nRestart=on-failure"]
+    PG[("PostgreSQL\nlocalhost:5432")]
 
-  space:3
-
-  block:GunicornBlock["Gunicorn (Unix socket: /run/bookshelf/bookshelf.sock)"]:3
-    columns 3
-    W1["Worker 1"]
-    W2["Worker 2"]
-    Systemd["systemd unit\nbookshelf.service"]
-  end
-
-  space:3
-
-  PG["PostgreSQL\nlocalhost:5432"]:::db
-
-  Client -->|HTTPS 443| TLS
-  LetsEncrypt --> TLS
-  TLS --> ProxyPass
-  ProxyPass --> W1
-  ProxyPass --> W2
-  W1 --> PG
-  W2 --> PG
-
-  classDef ext fill:#dbeafe,stroke:#3b82f6,color:#1e40af
-  classDef db fill:#fce7f3,stroke:#db2777,color:#831843
+    LE -. "certificate renewal" .-> TLS
+    Browser -->|"HTTPS :443"| TLS
+    TLS --> StaticServe
+    TLS --> ProxyPass
+    ProxyPass --> W1
+    ProxyPass --> W2
+    Systemd -->|"manages"| Gunicorn
+    W1 --> PG
+    W2 --> PG
 ```
